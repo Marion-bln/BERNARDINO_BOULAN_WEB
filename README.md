@@ -1,4 +1,4 @@
-#Project WEB PROG
+# Project WEB PROG
 
 To download and launch the project you have to  : 
  - create an environnement
