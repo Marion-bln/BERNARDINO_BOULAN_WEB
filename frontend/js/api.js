@@ -97,13 +97,48 @@ const Api = {
         }
     },
 
-    getBooks: async function(skip = 0, limit = 100) {
-        return this.call(`/books/?skip=${skip}&limit=${limit}`);
-        
-    },
-    async getBook(id) {
-    return this.call(`/books/${id}`);  // ou `/books/${id}/` selon votre route
+
+ // Crée un emprunt pour l'utilisateur courant
+  async createLoan(bookId) {
+    const user = Auth.getUser();
+    // on utilise call générique : POST /loans/?user_id&book_id
+    return this.call(
+      `/loans/?user_id=${user.id}&book_id=${bookId}`,
+      'POST'
+    );
   },
 
-   
+  // Récupère les emprunts d’un utilisateur
+  async getUserLoans(userId) {
+    return this.call(`/loans/user/${userId}`, 'GET');
+  },
+
+  // Marquer un emprunt comme retourné
+  async returnLoan(loanId) {
+    return this.call(`/loans/${loanId}/return`, 'POST');
+  },
+
+   // Prolonge un emprunt de X jours (défaut 7)
+  async extendLoan(loanId, extensionDays = 7) {
+    // on passe extension_days en query param
+    return this.call(`/loans/${loanId}/extend?extension_days=${extensionDays}`, 'POST');
+  },
+
+
+
+
+  // Recherche, pagination, filtrage :
+  async getBooks(skip = 0, limit = 100, q = "", genre = "") {
+    const qp = q     ? `&q=${encodeURIComponent(q)}`     : ""
+    const gp = genre ? `&genre=${encodeURIComponent(genre)}` : ""
+    return this.call(
+      `/books/books/?skip=${skip}&limit=${limit}${qp}${gp}`
+    )
+  },
+
+  // Récupérer un seul livre
+  async getBook(id) {
+    return this.call(`/books/books/${id}/`)
+  },
+
 };

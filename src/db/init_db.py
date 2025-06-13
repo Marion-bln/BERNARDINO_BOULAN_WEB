@@ -105,6 +105,8 @@ def init_db(db: Session) -> None:
             "pages": 656,
             "categories": [biographie]
         },
+        
+
     ]
     
     for book_data in books:

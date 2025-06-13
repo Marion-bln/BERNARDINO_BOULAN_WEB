@@ -12,6 +12,10 @@ from ..api.schemas.token import TokenPayload
 from ..utils.security import ALGORITHM
 from ..config import settings
 
+from typing import Optional
+from ..models.users import User as UserModel
+
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 
 
@@ -71,3 +75,4 @@ def get_current_admin_user(
             detail="Privilèges insuffisants",
         )
     return current_user
+

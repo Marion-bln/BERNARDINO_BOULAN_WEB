@@ -7,12 +7,13 @@ from ...db.session import get_db
 from ...models.loans import Loan as LoanModel
 from ...models.books import Book as BookModel
 from ...models.users import User as UserModel
-from ..schemas.loans import Loan, LoanCreate, LoanUpdate
+from ..schemas.loans import Loan, LoanCreate, LoanUpdate, LoanWithDetails 
 from ...repositories.loans import LoanRepository
 from ...repositories.books import BookRepository
 from ...repositories.users import UserRepository
 from ...services.loans import LoanService
-from ..dependencies import get_current_active_user, get_current_admin_user
+from typing import Optional
+from ..dependencies import get_current_active_user, get_current_admin_user 
 
 router = APIRouter()
 
@@ -42,8 +43,10 @@ def create_loan(
     user_id: int,
     book_id: int,
     loan_period_days: int = 14,
-    current_user = Depends(get_current_admin_user)
+    current_user = Depends(get_current_active_user)
 ) -> Any:
+
+
     """
     Crée un nouvel emprunt.
     """
@@ -103,7 +106,7 @@ def return_loan(
     *,
     db: Session = Depends(get_db),
     id: int,
-    current_user = Depends(get_current_admin_user)
+    current_user = Depends(get_current_active_user)
 ) -> Any:
     """
     Marque un emprunt comme retourné.
@@ -129,7 +132,7 @@ def extend_loan(
     db: Session = Depends(get_db),
     id: int,
     extension_days: int = 7,
-    current_user = Depends(get_current_admin_user)
+    current_user = Depends(get_current_active_user)
 ) -> Any:
     """
     Prolonge la durée d'un emprunt.
@@ -139,14 +142,17 @@ def extend_loan(
     user_repository = UserRepository(UserModel, db)
     service = LoanService(loan_repository, book_repository, user_repository)
     
+ 
+    loan = service.get(id=id)
+    if not loan:
+        raise HTTPException(status_code=404, detail="Emprunt non trouvé")
+    if not current_user.is_admin and loan.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Accès non autorisé")
+
     try:
-        loan = service.extend_loan(loan_id=id, extension_days=extension_days)
-        return loan
+        return service.extend_loan(loan_id=id, extension_days=extension_days)
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/active/", response_model=List[Loan])
@@ -183,7 +189,7 @@ def read_overdue_loans(
     return loans
 
 
-@router.get("/user/{user_id}", response_model=List[Loan])
+@router.get("/user/{user_id}", response_model=List[LoanWithDetails])
 def read_user_loans(
     *,
     db: Session = Depends(get_db),
@@ -205,8 +211,11 @@ def read_user_loans(
     user_repository = UserRepository(UserModel, db)
     service = LoanService(loan_repository, book_repository, user_repository)
     
-    loans = service.get_loans_by_user(user_id=user_id)
+    # on renvoie avec détails user+book
+    loans: List[LoanModel] = service.get_loans_by_user(user_id=user_id)
     return loans
+
+    
 
 
 @router.get("/book/{book_id}", response_model=List[Loan])

@@ -16,6 +16,7 @@ class Book(Base):
     publisher = Column(String(100), nullable=True)
     language = Column(String(50), nullable=True)
     pages = Column(Integer, nullable=True)
+    genre = Column(String(50), index=True, nullable=True)
     
     # Contraintes
     __table_args__ = (

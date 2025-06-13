@@ -7,6 +7,19 @@ const App = {
         this.loadInitialPage();
     },
 
+    // Réserve un livre
+    reserveBook: async function(bookId) {
+    try {
+      await Api.createLoan(bookId);
+      UI.showMessage('Livre réservé avec succès !', 'success');
+      // on recharge la liste pour mettre à jour la quantité
+      this.loadPage('books');
+    } catch (err) {
+      console.error('Erreur de réservation :', err);
+      UI.showMessage('Impossible de réserver : ' + err.message, 'error');
+    }
+  },
+
     // Charge la page initiale en fonction de l'état d'authentification
     loadInitialPage: function() {
         if (Auth.isAuthenticated()) {
@@ -18,6 +31,7 @@ const App = {
 
     // Charge une page spécifique
     loadPage: function(page) {
+        UI.setContent("");
         // Vérifier si la page nécessite une authentification
         const authRequiredPages = ['books', 'profile'];
         if (authRequiredPages.includes(page) && !Auth.isAuthenticated()) {
@@ -173,42 +187,75 @@ const App = {
             });
         });
     },
+    
 
     // affiche la page des livres 
-loadBooksPage: async function() {
-  // 1) Dès qu’on arrive sur cette page, on affiche **uniquement** le loader
-  UI.setContent(`<p class="text-center">Chargement en cours...</p>`);
+// js/app.js
+
+// js/app.js
+
+loadBooksPage: async function(q = "", genre = "") {
+  // 1) Loader
+  UI.setContent(`<p class="text-center">Chargement en cours…</p>`);
 
   try {
-    // 2) On appelle l’API une seule fois
-    const raw = await Api.getBooks();
-    console.log("🔍 raw books:", raw);
+    // 2) Barre de recherche + filtre genre
+    const filterHtml = `
+      <div class="filters mb-20" style="display:flex;gap:0.5rem;align-items:center;">
+        <input
+          type="text"
+          id="search-input"
+          class="form-control"
+          placeholder="Rechercher titre/auteur…"
+          value="${q}"
+          style="flex:1;"
+        />
+        <select id="genre-select" class="form-control" style="width:150px;">
+          <option value="">Tous genres</option>
+          <option value="Roman"      ${genre === "Roman"      ? "selected" : ""}>Roman</option>
+          <option value="Essai"      ${genre === "Essai"      ? "selected" : ""}>Essai</option>
+          <option value="Science Fiction"         ${genre === "Science Fiction"         ? "selected" : ""}>Science Fiction</option>
+          <option value="Policier"   ${genre === "Policier"   ? "selected" : ""}>Policier</option>
+          <option value="Biographie" ${genre === "Biographie" ? "selected" : ""}>Biographie</option>
+          <!-- Ajoute ici tes autres genres -->
+        </select>
+        <button id="filter-btn" class="btn">Filtrer</button>
+      </div>
+    `;
 
-    // 3) On extrait le tableau
+    // 3) Appel API
+    const raw = await Api.getBooks(0, 100, q, genre);
+    console.log("🔍 raw books:", raw);
     const books = Array.isArray(raw.items) ? raw.items : [];
 
-    // 4) On construit le HTML final
+    // 4) Construction des cartes
     let html = `
       <h2 class="mb-20">Catalogue de Livres</h2>
+      ${filterHtml}
       <div class="card-container">
     `;
 
     if (books.length === 0) {
-      html += `<p>Aucun livre disponible.</p>`;
+      html += `<p>Aucun livre trouvé.</p>`;
     } else {
       books.forEach(book => {
         html += `
           <div class="card">
             <div class="card-header"><h3>${book.title}</h3></div>
             <div class="card-body">
-              <p><strong>Auteur:</strong> ${book.author}</p>
-              <p><strong>ISBN:</strong> ${book.isbn}</p>
-              <p><strong>Année:</strong> ${book.publication_year}</p>
-              <p><strong>Disponible:</strong> ${book.quantity} exemplaire(s)</p>
+              <p><strong>Auteur :</strong> ${book.author}</p>
+              <p><strong>Genre :</strong> ${book.genre || "—"}</p>
+              <p><strong>ISBN :</strong> ${book.isbn}</p>
+              <p><strong>Année :</strong> ${book.publication_year}</p>
+              <p><strong>Disponible :</strong> ${book.quantity} exemplaires</p>
             </div>
             <div class="card-footer">
               <button class="btn" onclick="App.viewBookDetails(${book.id})">
-                Voir détails
+                Détails
+              </button>
+              <button class="btn ml-10" ${book.quantity === 0 ? "disabled" : ""}
+                      onclick="App.reserveBook(${book.id})">
+                Réserver
               </button>
             </div>
           </div>
@@ -216,14 +263,28 @@ loadBooksPage: async function() {
       });
     }
 
-    html += `</div>`;
+    html += `</div>`;  // fermeture card-container
 
-    // 5) **On remplace** le container (spinner + ancien contenu) par la liste
+    // 5) Affiche tout
     UI.setContent(html);
 
+    // 6) Événements sur Recherche + Filtre
+    document.getElementById("filter-btn").addEventListener("click", () => {
+      const newQ     = document.getElementById("search-input").value.trim();
+      const newGenre = document.getElementById("genre-select").value;
+      this.loadBooksPage(newQ, newGenre);
+    });
+    // Enter déclenche aussi le filtre
+    document.getElementById("search-input").addEventListener("keyup", e => {
+      if (e.key === "Enter") {
+        const newQ     = e.target.value.trim();
+        const newGenre = document.getElementById("genre-select").value;
+        this.loadBooksPage(newQ, newGenre);
+      }
+    });
+
   } catch (error) {
-    console.error('Erreur lors du chargement des livres :', error);
-    // 6) En cas d’erreur, on écrase aussi tout avec un message + bouton réessayer
+    console.error("Erreur lors du chargement des livres :", error);
     UI.setContent(`
       <p>Erreur lors du chargement des livres. (${error.message})</p>
       <button class="btn" onclick="App.loadBooksPage()">Réessayer</button>
@@ -232,103 +293,164 @@ loadBooksPage: async function() {
 },
 
 
+
+
     // Affiche les détails d'un livre
     viewBookDetails: async function(bookId) {
-        UI.showLoading();
+  UI.showLoading();
+  try {
+    const book = await Api.getBook(bookId);
+    const html = `
+      <div class="book-details">
+        <h2>${book.title}</h2>
+        <div class="book-info">
+          <p><strong>Auteur :</strong> ${book.author}</p>
+          <p><strong>ISBN :</strong> ${book.isbn}</p>
+          <p><strong>Année de publication :</strong> ${book.publication_year}</p>
+          <p><strong>Éditeur :</strong> ${book.publisher || '—'}</p>
+          <p><strong>Langue :</strong> ${book.language || '—'}</p>
+          <p><strong>Pages :</strong> ${book.pages || '—'}</p>
+          <p><strong>Genre :</strong> ${book.genre || '—'}</p>
+          <p><strong>Quantité disponible :</strong> ${book.quantity}</p>
+        </div>
+        <div class="book-description">
+          <h3>Description</h3>
+          <p>${book.description || 'Aucune description disponible.'}</p>
+        </div>
+        <button class="btn mt-20" onclick="App.loadPage('books')">← Retour</button>
+      </div>
+    `;
 
-        try {
-            const book = await Api.getBook(bookId);
+    UI.setContent(html);
+  } catch (err) {
+    console.error('Erreur détails du livre :', err);
+    UI.setContent(`
+      <p>Impossible de charger les détails. (${err.message})</p>
+      <button class="btn" onclick="App.loadPage('books')">Retour</button>
+    `);
+  }
+},
 
-            const html = `
-                <div class="book-details">
-                    <h2>${book.title}</h2>
-                    <div class="book-info">
-                        <p><strong>Auteur:</strong> ${book.author}</p>
-                        <p><strong>ISBN:</strong> ${book.isbn}</p>
-                        <p><strong>Année de publication:</strong> ${book.publication_year}</p>
-                        <p><strong>Éditeur:</strong> ${book.publisher || 'Non spécifié'}</p>
-                        <p><strong>Langue:</strong> ${book.language || 'Non spécifiée'}</p>
-                        <p><strong>Pages:</strong> ${book.pages || 'Non spécifié'}</p>
-                        <p><strong>Quantité disponible:</strong> ${book.quantity}</p>
-                    </div>
-                    <div class="book-description">
-                        <h3>Description</h3>
-                        <p>${book.description || 'Aucune description disponible.'}</p>
-                    </div>
-                    <button class="btn mt-20" onclick="App.loadPage('books')">Retour à la liste</button>
-                </div>
-            `;
 
-            UI.setContent(html);
-        } catch (error) {
-            console.error('Erreur lors du chargement des détails du livre:', error);
-            UI.setContent(`
-                <p>Erreur lors du chargement des détails du livre. Veuillez réessayer.</p>
-                <button class="btn mt-20" onclick="App.loadPage('books')">Retour à la liste</button>
-            `);
-        }
-    },
+returnLoan: async function(loanId) {
+    try {
+      await Api.returnLoan(loanId);
+      UI.showMessage('Livre rendu avec succès !', 'success');
+      // On recharge la page profil pour mettre à jour la liste des emprunts
+      this.loadPage('profile');
+    } catch (err) {
+      console.error('Erreur de retour de prêt :', err);
+      UI.showMessage(`Impossible de retourner le livre : ${err.message}`, 'error');
+    }
+  },
+
+
+extendLoan: async function(loanId) {
+    try {
+      await Api.extendLoan(loanId, 7);
+      UI.showMessage('Emprunt prolongé de 7 jours !', 'success');
+      // on recharge le profil pour voir la nouvelle due_date
+      this.loadPage('profile');
+    } catch (err) {
+      console.error('Erreur de prolongation :', err);
+      UI.showMessage('Impossible de prolonger : ' + err.message, 'error');
+    }
+  },
+
 
     // Charge la page de profil
-    loadProfilePage: async function() {
-  // 1) On affiche directement un loader dans le container
-  UI.setContent(`<p class="text-center">Chargement du profil en cours...</p>`);
+loadProfilePage: async function() {
+  // Affiche immédiatement le loader
+  UI.setContent(`<p class="text-center">Chargement du profil…</p>`);
 
   try {
-    // 2) Récupérer l'utilisateur courant
-    //    Si vous stockez déjà l'utilisateur dans Auth après login,
-    //    Auth.getUser() devrait retourner un objet.
+    // Récupération de l'utilisateur courant
     let user = Auth.getUser();
-
-    // 3) Si pas encore chargé, on appelle l'API pour le récupérer
-    if (!user) {
+        if (!user) {
       await Api.getCurrentUser();
       user = Auth.getUser();
     }
 
-    // 4) Une fois en main, on construit le HTML
+    // Récupération des emprunts
+    const rawLoans = await Api.getUserLoans(user.id);
+    const loans = Array.isArray(rawLoans.items) ? rawLoans.items : rawLoans;
+
+    // Filtrer les emprunts actifs
+    const activeLoans = loans.filter(l => l.return_date === null);
+
+    // Calcul des initiales
     const initials = user.full_name
       .split(' ')
       .map(n => n.charAt(0))
       .join('')
       .toUpperCase();
 
-    const html = `
+    // Construction du HTML
+    let html = `
       <div class="profile-container">
         <div class="profile-header">
           <div class="profile-avatar">${initials}</div>
           <h2>${user.full_name}</h2>
         </div>
         <div class="profile-info">
-          <div><strong>Email:</strong> ${user.email}</div>
-          <div><strong>Statut:</strong> ${user.is_active ? 'Actif' : 'Inactif'}</div>
-          <div><strong>Rôle:</strong> ${user.is_admin ? 'Administrateur' : 'Utilisateur'}</div>
-          <div><strong>Téléphone:</strong> ${user.phone || 'Non spécifié'}</div>
-          <div><strong>Adresse:</strong> ${user.address || 'Non spécifiée'}</div>
+          <div><strong>Email :</strong> ${user.email}</div>
+          <div><strong>Statut :</strong> ${user.is_active ? 'Actif' : 'Inactif'}</div>
+          <div><strong>Rôle :</strong> ${user.is_admin ? 'Admin' : 'Utilisateur'}</div>
+          <div><strong>Téléphone :</strong> ${user.phone || '—'}</div>
+          <div><strong>Adresse :</strong> ${user.address || '—'}</div>
         </div>
+
+        <h3 class="mt-20">Mes emprunts en cours</h3>
+        <ul class="loan-list">
+    `;
+
+    if (activeLoans.length === 0) {
+      html += `<li>Aucun emprunt actif.</li>`;
+    } else {
+      activeLoans.forEach(loan => {
+        // Si la relation book n'est pas jointe, on affiche un titre de secours
+        const bookTitle = loan.book?.title || `Livre #${loan.book_id}`;
+        const loanDate = new Date(loan.loan_date).toLocaleDateString(); 
+        const dueDate   = new Date(loan.due_date).toLocaleDateString();
+        html += `
+          <li class="loan-item">
+            ${bookTitle}</strong><br>
+      Emprunté le ${loanDate} – À rendre le ${dueDate}
+      <div class="loan-actions">
+        <button class="btn btn-small" onclick="App.returnLoan(${loan.id})">
+          Rendre
+        </button>
+        <button class="btn btn-small ml-5" onclick="App.extendLoan(${loan.id})">
+          Prolonger 
+        </button>
+      </div>
+    </li>
+  `;
+});
+    }
+
+    html += `
+        </ul>
         <button id="edit-profile-btn" class="btn mt-20">Modifier le profil</button>
       </div>
     `;
 
-    // 5) On remplace le loader par le vrai contenu
+    // Remplace le loader par le contenu
     UI.setContent(html);
 
-    // 6) Enfin on attache le listener pour le bouton modifier
-    document
-      .getElementById('edit-profile-btn')
-      .addEventListener('click', () => {
-        this.loadEditProfilePage(user);
-      });
+    // Bouton modifier le profil
+    document.getElementById('edit-profile-btn')
+      .addEventListener('click', () => this.loadEditProfilePage(user));
 
   } catch (error) {
-    console.error('Erreur lors du chargement du profil :', error);
-    // 7) En cas d'erreur, on remplace aussi par un message
+    console.error('Erreur chargement profil :', error);
     UI.setContent(`
-      <p>Erreur lors du chargement du profil (${error.message}).</p>
+      <p>Erreur lors du chargement du profil (${error.message})</p>
       <button class="btn" onclick="App.loadPage('books')">Retour aux livres</button>
     `);
   }
 },
+
 
 
     // Charge la page de modification du profil

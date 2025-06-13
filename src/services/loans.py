@@ -10,6 +10,16 @@ from ..models.books import Book
 from ..models.users import User
 from ..api.schemas.loans import LoanCreate, LoanUpdate
 from .base import BaseService
+from datetime import timedelta
+from typing import Optional
+from fastapi import HTTPException, status
+from datetime import timedelta
+from ..models.loans import Loan as LoanModel
+from ..models.books import Book as BookModel
+from ..models.users import User as UserModel
+
+
+
 
 
 class LoanService(BaseService[Loan, LoanCreate, LoanUpdate]):
@@ -132,30 +142,31 @@ class LoanService(BaseService[Loan, LoanCreate, LoanUpdate]):
         
         return loan
     
-    def extend_loan(self, *, loan_id: int, extension_days: int = 7) -> Loan:
+    def extend_loan(self, *, loan_id: int, extension_days: int = 7) -> LoanModel:
         """
-        Prolonge la durée d'un emprunt, en vérifiant les règles métier.
+        Prolonge un emprunt de `extension_days` jours, une seule fois.
         """
-        # Récupérer l'emprunt
+        # 1) Récupérer l'emprunt
         loan = self.loan_repository.get(id=loan_id)
         if not loan:
-            raise ValueError(f"Emprunt avec l'ID {loan_id} non trouvé")
-        
-        # Vérifier si l'emprunt est déjà retourné
-        if loan.return_date:
-            raise ValueError("L'emprunt a déjà été retourné")
-        
-        # Vérifier si l'emprunt est en retard
-        if loan.due_date < datetime.utcnow():
-            raise ValueError("L'emprunt est en retard et ne peut pas être prolongé")
-        
-        # Vérifier si l'emprunt a déjà été prolongé (en supposant qu'on ne peut prolonger qu'une fois)
-        # Cette vérification est simplifiée, vous pourriez ajouter un champ "extensions_count" au modèle Loan
-        if loan.due_date > loan.loan_date + timedelta(days=14):
-            raise ValueError("L'emprunt a déjà été prolongé")
-        
-        # Prolonger l'emprunt
-        new_due_date = loan.due_date + timedelta(days=extension_days)
-        loan_data = {"due_date": new_due_date}
-        
-        return self.loan_repository.update(db_obj=loan, obj_in=loan_data)
+            raise ValueError(f"Emprunt #{loan_id} non trouvé")
+
+        # 2) Ne pas prolonger si déjà retourné
+        if loan.return_date is not None:
+            raise ValueError("Impossible de prolonger : emprunt déjà retourné")
+
+        # 3) Ne permettre qu’une seule prolongation
+        if loan.extended:
+            raise ValueError("Cet emprunt a déjà été prolongé une fois")
+
+        # 4) Calculer la nouvelle due_date
+        #    (on se base sur l’ancienne due_date, pas sur now)
+        new_due = loan.due_date + timedelta(days=extension_days)
+
+        # 5) Mettre à jour en base
+        update_data = {
+            "due_date": new_due,
+            "extended": True,
+        }
+        updated = self.loan_repository.update(db_obj=loan, obj_in=update_data)
+        return updated

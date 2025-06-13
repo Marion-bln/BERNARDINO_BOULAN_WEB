@@ -39,6 +39,7 @@ class BookBase(BaseModel):
     publisher: Optional[str] = Field(None, max_length=100, description="Éditeur du livre")
     language: Optional[str] = Field(None, max_length=50, description="Langue du livre")
     pages: Optional[int] = Field(None, gt=0, description="Nombre de pages")
+    genre: Optional[str] = None   
 
 
 class BookCreate(BookBase):
@@ -56,7 +57,7 @@ class BookUpdate(BaseModel):
     language: Optional[str] = Field(None, max_length=50, description="Langue du livre")
     pages: Optional[int] = Field(None, gt=0, description="Nombre de pages")
     category_ids: Optional[List[int]] = Field(None, description="IDs des catégories")
-
+    genre: Optional[str] = None  
 
 class BookInDBBase(BookBase):
     id: int
@@ -69,3 +70,11 @@ class BookInDBBase(BookBase):
 
 class Book(BookInDBBase):
     categories: List[Category] = []
+    
+
+class PagedBook(BaseModel):
+    items: List[Book]
+    total: int
+    page: int
+    size: int
+    pages: int
